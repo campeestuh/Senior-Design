@@ -1,12 +1,10 @@
-# Senior-Design
-
 Wiring 
 
 Rotary Encoder   --> FREENOVE ESP32 WROOM
-> CLK (Output A) --> Pin 4
-> DT  (Output B) --> Pin 5
-> SW  (Switch)   --> Pin 16
->  +  (VCC)      --> 3.3V
+> CLK (Output A) --> Pin 4 
+> DT  (Output B) --> Pin 5 
+> SW  (Switch)   --> Pin 16 
+>  +  (VCC)      --> 3.3V 
 > GND            --> GND
 
 LCD 
