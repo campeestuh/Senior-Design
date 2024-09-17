@@ -1,4 +1,3 @@
-#include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
 // LCD settings
@@ -271,4 +270,5 @@ void displayMenu() {
       lcd.print("                ");
     }
   }
+  
 }
