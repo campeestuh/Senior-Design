@@ -102,9 +102,9 @@ void loop() {
       seconds = seconds % 60;
 
       // Display in MM:SS format
-      lcd.setCursor(12, 0);
+      lcd.setCursor(11, 0);
       lcd.print("   "); // Clear existing timer text
-      lcd.setCursor(12, 0);
+      lcd.setCursor(11, 0);
       lcd.print(minutes);
       lcd.print(":");
       if (seconds < 10) {
@@ -122,9 +122,9 @@ void loop() {
     static unsigned long lastStoppedTime = 0;
     if (stoppedTime != lastStoppedTime) {
       lastStoppedTime = stoppedTime;
-      lcd.setCursor(12, 0);
+      lcd.setCursor(11, 0);
       lcd.print("   "); // Clear previous timer display
-      lcd.setCursor(12, 0);
+      lcd.setCursor(11, 0);
       lcd.print(minutes);
       lcd.print(":");
       if (seconds < 10) {
@@ -202,7 +202,7 @@ void handleButtonPress() {
     // Start the timer
     timerRunning = true;
     startTime = millis();  // Record the start time
-    lcd.setCursor(12, 0);
+    lcd.setCursor(11, 0);
     lcd.print("00:0");  // Initial timer display
     stoppedTime = 0;     // Reset stoppedTime
   } else {
@@ -215,9 +215,9 @@ void handleButtonPress() {
     unsigned long minutes = seconds / 60;
     seconds = seconds % 60;
 
-    lcd.setCursor(12, 0);
+    lcd.setCursor(11, 0);
     lcd.print("   "); // Clear previous timer display
-    lcd.setCursor(12, 0);
+    lcd.setCursor(11, 0);
     lcd.print(minutes);
     lcd.print(":");
     if (seconds < 10) {
