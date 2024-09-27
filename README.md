@@ -10,7 +10,7 @@ Rotary Encoder   --> FREENOVE ESP32 WROOM
 LCD 
 VCC                 --> 5V
 SDA (Serial Data)   --> Pin 21
-SCL (Serical Clock) --> Pin 22
+SCL (Serial Clock) --> Pin 22
 GND                 --> GND
 
 Button 
