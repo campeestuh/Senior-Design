@@ -28,7 +28,7 @@ DIRECTION   --> Pin 14
 ENABLE      --> 5V
 
 TREADMILL
-STEP/PUL    --> Pin 12
+STEP/PUL    --> Pin 27
 DIRECTION   --> Pin 25
 ENABLE      --> 5V
 
