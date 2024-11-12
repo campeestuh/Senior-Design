@@ -1,4 +1,4 @@
-#include <AccelStepper.h>
+#include <AccelStepper.h> 
 
 // Define stepper motor connections and interface type
 #define dirPin 8      // Direction pin
@@ -28,8 +28,8 @@ int treadmillSpeed = 0;      // Motor speed starts at 0
 const int maxSpeed = 1337;   // Max speed for the treadmill motor
 
 // Adjust these values to fine-tune the speed increments
-const int treadmillIncrement = 17;  // Increment for treadmill speed
-const int augerIncrement = 26;      // Increment for auger speed
+const int treadmillIncrement = 17;  // Smaller increment for treadmill speed
+const int augerIncrement = 15;      // Smaller increment for auger speed
 
 void setup() {
   Serial.begin(9600);
@@ -49,17 +49,18 @@ void setup() {
   lastCLKState = digitalRead(CLK);
 
   // Set maximum speed and acceleration (Treadmill)
-  treadmill.setMaxSpeed(maxSpeed);     // Max speed is 1337 steps per second
-  treadmill.setAcceleration(2000);    // High acceleration for quick ramp-up
+  treadmill.setMaxSpeed(maxSpeed);
+  treadmill.setAcceleration(100);    // Lower acceleration for a smoother start and stop
 
   // Set maximum speed and acceleration (Auger)
-  auger.setMaxSpeed(augerMaxSpeed);   // Max speed is 4000 steps per second
-  auger.setAcceleration(2000);       // High acceleration
+  auger.setMaxSpeed(augerMaxSpeed);
+  auger.setAcceleration(100);        // Lower acceleration
 }
 
 void loop() {
   // Check if the button is pressed
   while (digitalRead(Button) == LOW) {
+
     slowDown(treadmillSpeed); // Slow down the treadmill
   }
 
@@ -89,9 +90,14 @@ void loop() {
     auger.setSpeed(augerSpeed);
 
     // Display the current speed
-    Serial.print("Treadmill Speed: ");
-    Serial.println(treadmillSpeed);
 
+    float rpm = (abs(treadmillSpeed) * 60.0) / 400;
+
+    // Calculate the linear speed of the treadmill in meters per second
+    float linearSpeed = (rpm * 0.0762 * PI) / 60.0;
+
+    // Display the calculated RPM and linear speed in meters per second
+    Serial.println(linearSpeed);
     // Update the last CLK state
     lastCLKState = currentCLKState;
   }
@@ -101,33 +107,29 @@ void loop() {
   auger.runSpeed();
 }
 
-// Function to slow down the treadmill gradually
-void slowDown(int &treadmillSpeed) { // Pass by reference
- treadmill.setSpeed(treadmillSpeed);
+ void slowDown(int &treadmillSpeed) {
+  treadmill.setSpeed(treadmillSpeed);
   treadmill.runSpeed();
   Serial.println("Emergency stop activated - slowing down.");
+
   while (treadmillSpeed > 0) {
-    // Decrease speed dynamically based on the current speed
-    delay(1000);
-    treadmillSpeed -= 17;
+    // Gradually reduce speed with a dynamic acceleration rate
+  
+    treadmill.setAcceleration(treadmillSpeed / 6.5);  // Gradual deceleration
 
-    // Constrain to ensure speed doesn't go below 0
-    treadmillSpeed = constrain(treadmillSpeed, 0, 1377);
+    // Reduce treadmill speed and constrain it
+    treadmillSpeed -= max(1, treadmillSpeed * 0.05);  // Reduce by 5% of current speed
+    treadmillSpeed = constrain(treadmillSpeed, 0, maxSpeed);
 
-    // Apply the updated speed
     treadmill.setSpeed(-treadmillSpeed); // Negative for reverse direction
-
     Serial.println(treadmillSpeed);
-
-    // Run the motor at the updated speed
+    
     treadmill.runSpeed();
-
-    // Delay to allow for smoother processing
-    delay(200); // Shorter delay for finer granularity
+    delay(10);  // Frequent updates for smoother slowdown
   }
 
-  // Ensure the motor is fully stopped
-
- 
+  treadmill.setSpeed(0);
+  treadmill.runSpeed();
   Serial.println("Treadmill stopped.");
 }
+
