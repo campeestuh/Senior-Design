@@ -68,6 +68,10 @@ void loop() {
   
   if (currentMode == HARNESS_MODE) {
     handleHarnessMode();
+    if (digitalRead(rotaryButton) == LOW) {  // Check rotary button in Harness Mode
+      delay(200);  // Debounce delay
+      returnToMenu();  // Return to menu when rotary button is pressed
+    }
   }
 }
 
@@ -170,7 +174,7 @@ void handleHarnessMode() {
       stepper.runToPosition();
     } else {
       Serial.println("Ascending Off Platform");
-      int ascendPosition = stepper.currentPosition() + 500;
+      int ascendPosition = stepper.currentPosition() - 500;
       stepper.moveTo(ascendPosition);
       stepper.runToPosition();
     }
@@ -179,6 +183,15 @@ void handleHarnessMode() {
   if (digitalRead(emergencyButton) == HIGH) {
     eButtonPressed = false;  // Reset emergency button state
   }
+}
+
+// Function to return to menu
+void returnToMenu() {
+  currentMode = MENU;  // Switch back to MENU mode
+  motorDirection = 0;  // Stop motor
+  stepper.setSpeed(0);  // Ensure motor stops
+  displayMenu();  // Refresh the menu display
+  Serial.println("Returned to MENU");
 }
 
 // Boot message function
