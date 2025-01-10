@@ -1,274 +1,279 @@
-#include <LiquidCrystal_I2C.h>
+#include <LiquidCrystal_PCF8574.h>
+#include <AccelStepper.h>
 
-// LCD settings
-int lcdColumns = 16;
-int lcdRows = 2;
-LiquidCrystal_I2C lcd(0x27, lcdColumns, lcdRows);
+// Pin Definitions
+#define encoderCLK 4
+#define encoderDT 5
+#define rotaryButton 18
+#define treadDirectionPin 25
+#define treadPulsePin 27
+#define augerDirectionPin 14
+#define augerPulsePin 13
+#define Button 19
+#define emergencyButton 26
 
-// Rotary Encoder Wiring
-const int CLK = 4;   // Pin 4 -> CLK pin
-const int DT = 5;    // Pin 5 -> DT pin 
-const int rotaryButton = 18;  // Pin 18 -> SW (Switch)
-const int Button = 19;     // Pin 19 -> New Button
-volatile int encoderPos = 0; // Default starting 
-volatile bool rotaryButtonPressed = false; // Always set at 0 initially
-volatile bool buttonPressed = false; // Always set at 0 initially
+// LCD Settings
+const int lcdColumns = 16, lcdRows = 2;
+LiquidCrystal_PCF8574 lcd(0x27);
 
+// Treadmill Settings
+AccelStepper treadmill(1, treadPulsePin, treadDirectionPin);
+int treadmillSpeed = 0;                   // Initial Treadmill Speed
+const int maxSpeed = 1337;                // Max Treadmill Speed
+const int treadmillIncrement = 17;        // Speed Adjustment Step
+
+// Auger Settings
+AccelStepper auger(1, augerPulsePin, augerDirectionPin);
+int augerSpeed = 0;                       // Initial Auger Speed
+const int augerMaxSpeed = 4000;           // Max Auger Speed
+const int augerIncrement = 26;            // Speed Adjustment Step
+
+// Harness Motor Settings
+AccelStepper stepper(1, 15, 16); // Harness motor
+bool positionSaved = false;
+int setPosition = 0; // Saved position for harness adjustments
+bool eButtonPressed = false;
+unsigned long lastMoveTime = 0;  // To track the last movement time
+int count = 0;             // Initialize the count for rotary encoder steps
+
+// Menu Variables
+enum Mode { MENU, SPEED_MODE, HARNESS_MODE } currentMode = MENU;
+const String menuItems[] = {"SPEED", "HARNESS"};
 int menuIndex = 0;
-int pageIndex = 0;
-const int itemsPerPage = 1;  // Number of menu items to display per page
-const int numMenuItems = 2;  // Number of menu items
-String menuItems[numMenuItems] = {"SPEED", "HARNESS"};
-const int numPages = (numMenuItems + itemsPerPage - 1) / itemsPerPage;  // Calculate number of pages
+const int numMenuItems = 2;
 
-enum Mode { MENU, SELECTION };
-Mode currentMode = MENU;
-
-// Store the previous state of the rotary encoder's CLK pin
-volatile int lastCLKState = HIGH;
+// Rotary Encoder State
+int lastCLKState = LOW;
 unsigned long lastDebounceTime = 0;
-const unsigned long debounceDelay = 50; // 50 ms debounce delay
+const unsigned long debounceDelay = 50;
 
-// Global variables to track timer state
-bool timerRunning = false;
-unsigned long startTime = 0;
-unsigned long elapsedTime = 0;
-unsigned long lastDisplayUpdate = 0;
-const unsigned long displayUpdateInterval = 100; // Update the display every 100 ms
-unsigned long stoppedTime = 0; // Time at which the timer was stopped
+// Button Release Guard
+bool buttonReleaseGuard = false;
+unsigned long buttonReleaseTime = 0;
+const unsigned long buttonReleaseDelay = 200; // Ignore button presses for 200ms
 
 void setup() {
-  Serial.begin(9600);  // Initialize serial communication
-  lcd.init();
-  lcd.backlight();
-  bootMessage();
-  
-  // Rotary Encoder setup
-  pinMode(CLK, INPUT);
-  pinMode(DT, INPUT);
-  pinMode(rotaryButton, INPUT_PULLUP);  // Use internal pull-up resistor
-  pinMode(Button, INPUT_PULLUP);      // Use internal pull-up resistor
+  Serial.begin(115200);
 
-  attachInterrupt(digitalPinToInterrupt(CLK), readEncoder, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(rotaryButton), rotaryButtonPressedISR, FALLING);
-  attachInterrupt(digitalPinToInterrupt(Button), ButtonPressedISR, FALLING);
-
+  // Initialize LCD
+  lcd.begin(lcdColumns, lcdRows);
+  lcd.setBacklight(255);
   displayMenu();
+
+  // Initialize Rotary Encoder Pins
+  pinMode(encoderCLK, INPUT);
+  pinMode(encoderDT, INPUT);
+  pinMode(rotaryButton, INPUT_PULLUP);
+  pinMode(Button, INPUT_PULLUP);
+  pinMode(emergencyButton, INPUT_PULLUP);
+
+  // Treadmill Setup
+  treadmill.setMaxSpeed(maxSpeed);
+  treadmill.setAcceleration(2000);
+
+  // Auger Setup
+  auger.setMaxSpeed(augerMaxSpeed);
+  auger.setAcceleration(2000);
+
+  // Harness Motor Setup
+  stepper.setMaxSpeed(800);         // Adjust max speed for smooth operation
+  stepper.setAcceleration(300);    // Set acceleration for smoother transitions
+  stepper.setSpeed(0);             // Initially, set the motor speed to 0
+
+  lastCLKState = digitalRead(encoderCLK);
 }
 
 void loop() {
-  // Check if encoder position has changed and update the menu
-  if (encoderPos != 0 && currentMode == MENU) {
-    menuIndex += encoderPos;
+  static Mode previousMode = MENU; // Keep track of the previous mode
 
-    // Ensure menuIndex stays within bounds
-    menuIndex = constrain(menuIndex, 0, numMenuItems - 1);
-
-    // Update the pageIndex based on the new menuIndex
-    pageIndex = menuIndex / itemsPerPage;
-
-    // Refresh the menu display
-    displayMenu();
-
-    // Reset encoder position after handling
-    encoderPos = 0;
-  }
-
-  // Check if the rotary button was pressed
-  if (rotaryButtonPressed) {
-    rotaryButtonPressed = false;
-    handleRotaryButtonPress();
-  }
-
-  // If the new button is pressed, handle the timer logic
-  if (buttonPressed) {
-    buttonPressed = false;
-    handleButtonPress();
-  }
-
-  // Update the timer display if running
-  if (timerRunning) {
-    unsigned long currentTime = millis();
-    elapsedTime = currentTime - startTime;
-
-    // Update the timer display only if the specified interval has passed
-    if (currentTime - lastDisplayUpdate >= displayUpdateInterval) {
-      lastDisplayUpdate = currentTime;
-
-      // Convert elapsedTime to minutes and seconds
-      unsigned long seconds = elapsedTime / 1000;
-      unsigned long minutes = seconds / 60;
-      seconds = seconds % 60;
-
-      // Display in MM:SS format
-      lcd.setCursor(11, 0);
-      lcd.print("   "); // Clear existing timer text
-      lcd.setCursor(11, 0);
-      lcd.print(minutes);
-      lcd.print(":");
-      if (seconds < 10) {
-        lcd.print("0");  // Leading zero for seconds less than 10
-      }
-      lcd.print(seconds);
-    }
-  } else if (!timerRunning && stoppedTime > 0) {
-    // Display the stopped time only if it has changed
-    unsigned long seconds = stoppedTime / 1000;
-    unsigned long minutes = seconds / 60;
-    seconds = seconds % 60;
-
-    // Update the display if stopped time is different from previous display
-    static unsigned long lastStoppedTime = 0;
-    if (stoppedTime != lastStoppedTime) {
-      lastStoppedTime = stoppedTime;
-      lcd.setCursor(11, 0);
-      lcd.print("   "); // Clear previous timer display
-      lcd.setCursor(11, 0);
-      lcd.print(minutes);
-      lcd.print(":");
-      if (seconds < 10) {
-        lcd.print("0");  // Leading zero for seconds less than 10
-      }
-      lcd.print(seconds);
-    }
-  }
-}
-
-// Rotary encoder read function with debounce
-void readEncoder() {
-  unsigned long currentTime = millis();
-  
-  if (currentTime - lastDebounceTime > debounceDelay) {
-    int currentCLKState = digitalRead(CLK);  
-    int stateB = digitalRead(DT);  
-
-    if (currentCLKState != lastCLKState) {
-      if (digitalRead(CLK) == digitalRead(DT)) {
-        encoderPos = 1;  // Clockwise rotation
-      } else {
-        encoderPos = -1;  // Counterclockwise rotation
-      }
-      lastDebounceTime = currentTime;
-    }
-    lastCLKState = currentCLKState;
-  }
-}
-
-// Interrupt service routine for the rotary button press
-void rotaryButtonPressedISR() {
-  rotaryButtonPressed = true;
-}
-
-// Interrupt service routine for the new button press
-void ButtonPressedISR() {
-  buttonPressed = true;
-}
-
-// Function to handle the rotary button press
-void handleRotaryButtonPress() {
   if (currentMode == MENU) {
-    currentMode = SELECTION;
-    handleMenuSelection();
-  } else if (currentMode == SELECTION) {
-    currentMode = MENU;
-    displayMenu();
-    resetEncoderState(); // Reset encoder state when returning to menu
+    // Guard against lingering button presses after returning to MENU
+    if (buttonReleaseGuard && millis() - buttonReleaseTime > buttonReleaseDelay) {
+      buttonReleaseGuard = false; // Clear the guard after the delay
+    }
+
+    if (!buttonReleaseGuard) {
+      // Refresh menu display when transitioning to MENU mode
+      if (previousMode != MENU) {
+        lcd.clear();
+        displayMenu();
+        previousMode = MENU; // Update the mode tracker
+      }
+      handleEncoderForMenu(); // Handle rotary encoder navigation
+      if (buttonPressed(rotaryButton)) handleMenuSelection(); // Select menu item
+    }
+
+    // Keep the treadmill running at the set speed
+    if (treadmillSpeed > 0) {
+      treadmill.runSpeed(); // Ensure treadmill continues to run
+      auger.runSpeed();
+    }
+  } else if (currentMode == SPEED_MODE) {
+    handleSpeedMode();
+    if (buttonPressed(rotaryButton)) returnToMenu(); // Return to menu if button is pressed
+  } else if (currentMode == HARNESS_MODE) {
+    handleHarnessMode();
+    if (buttonPressed(rotaryButton)) returnToMenu(); // Return to menu if button is pressed
   }
 }
 
-// Function to handle the action when a menu option is selected
+// Function to Handle Rotary Encoder for Menu Navigation
+void handleEncoderForMenu() {
+  int currentCLKState = digitalRead(encoderCLK);
+  if ((millis() - lastDebounceTime) > debounceDelay && currentCLKState != lastCLKState) {
+    if (digitalRead(encoderDT) != currentCLKState) {
+      menuIndex++; // Clockwise rotation
+    } else {
+      menuIndex--; // Counter-clockwise rotation
+    }
+    menuIndex = constrain(menuIndex, 0, numMenuItems - 1); // Ensure menuIndex stays within bounds
+    displayMenu(); // Update LCD display
+    lastCLKState = currentCLKState;
+    lastDebounceTime = millis();
+  }
+}
+
+// Function to Handle Menu Item Selection
 void handleMenuSelection() {
   lcd.clear();
-  switch (menuIndex) {
-    case 0:
-////////////////////////////////// TO DO //////////////////////////////////
-      lcd.print("Speed selected");
-      delay(1000);
-      break;
-    case 1:
-////////////////////////////////// TO DO //////////////////////////////////
-      lcd.print("Harness selected");
-      delay(1000);
-      break;
-  }
-  displayMenu(); // Return to menu after selection
-}
+  lcd.print(menuItems[menuIndex] + " SELECTED");
+  Serial.println(menuItems[menuIndex] + " SELECTED");
+  delay(1000); // Simple delay to display selection
 
-
-// Function to handle actions for the new button (timer start/stop)
-void handleButtonPress() {
-  if (!timerRunning) {
-    // Start the timer
-    timerRunning = true;
-    startTime = millis();  // Record the start time
-    lcd.setCursor(11, 0);
-    lcd.print("00:0");  // Initial timer display
-    stoppedTime = 0;     // Reset stoppedTime
-  } else {
-    // Stop the timer
-    timerRunning = false;
-    stoppedTime = millis() - startTime; // Record the time at which the timer was stopped
-
-    // Display the stopped time
-    unsigned long seconds = stoppedTime / 1000;
-    unsigned long minutes = seconds / 60;
-    seconds = seconds % 60;
-
-    lcd.setCursor(11, 0);
-    lcd.print("   "); // Clear previous timer display
-    lcd.setCursor(11, 0);
-    lcd.print(minutes);
-    lcd.print(":");
-    if (seconds < 10) {
-      lcd.print("0");  // Leading zero for seconds less than 10
-    }
-    lcd.print(seconds);
+  if (menuIndex == 0) {
+    currentMode = SPEED_MODE; // Switch to SPEED_MODE
+    lcd.clear();
+    lcd.print("Speed Mode");
+    treadmill.setSpeed(treadmillSpeed); // Maintain the current treadmill speed
+  } else if (menuIndex == 1) {
+    currentMode = HARNESS_MODE; // Switch to HARNESS_MODE
+    lcd.clear();
+    lcd.print("Harness Mode");
   }
 }
 
-// Boot Message is displayed when first turned on
-void bootMessage() {
-  lcd.setCursor(0, 0);
-  lcd.print("WELCOME");
-  delay(1000);
-  lcd.clear();
-  lcd.setCursor(0, 1);
-  lcd.print("RATSTRONAUTS!");
-  delay(1000);
-  lcd.clear(); 
-}
-
-// Function to reset encoder state
-void resetEncoderState() {
-  encoderPos = 0;
-  lastCLKState = HIGH;
-  lastDebounceTime = millis();
-  Serial.println("Encoder state reset");  // Debugging output
-}
-
-// Function to display the current menu on the LCD
+// Function to Display Menu on LCD
 void displayMenu() {
-  lcd.clear();
-  lcd.setCursor(0, 0);
+  lcd.clear();             // Ensure the display is fully cleared
+  lcd.setCursor(0, 0);     // Reset the cursor position
+  lcd.print("MENU");       // Display the menu header
+  lcd.setCursor(0, 1);     // Move to the second line
+  lcd.print(menuIndex == 0 ? "-> SPEED" : "-> HARNESS"); // Display the menu item
+}
 
-  // Display "MENU" at the top
-  lcd.print("MENU");
+// Function to Handle Button Press Debouncing
+bool buttonPressed(int pin) {
+  if (digitalRead(pin) == LOW && (millis() - lastDebounceTime) > debounceDelay) {
+    lastDebounceTime = millis();
+    return true;
+  }
+  return false;
+}
 
-  for (int i = 0; i < itemsPerPage; i++) {
-    int menuItemIndex = pageIndex * itemsPerPage + i;
-    lcd.setCursor(0, i + 1);
+// Speed Mode Logic
+void handleSpeedMode() {
+  int currentCLKState = digitalRead(encoderCLK);
 
-    if (menuItemIndex < numMenuItems) {
-      if (menuItemIndex == menuIndex) {
-        lcd.print("-> ");
-      } else {
-        lcd.print("  ");
-      }
-      lcd.setCursor(2, i + 1);
-      lcd.print(menuItems[menuItemIndex]);
+  // If the rotary encoder has been turned
+  if (currentCLKState != lastCLKState) {
+    if (digitalRead(encoderDT) != currentCLKState) {
+      treadmillSpeed += treadmillIncrement; // Increase speed
+      augerSpeed += augerIncrement;
+
     } else {
-      lcd.print("                ");
+      treadmillSpeed -= treadmillIncrement; // Decrease speed
+      augerSpeed -= augerIncrement;
+
+    }
+
+    // Constrain the speed within valid range
+    treadmillSpeed = constrain(treadmillSpeed, 0, maxSpeed);
+    augerSpeed = constrain(augerSpeed, 0, augerMaxSpeed);
+
+    // Update the motor speed
+    treadmill.setSpeed(treadmillSpeed);
+    auger.setSpeed(augerSpeed);
+
+    // Calculate RPM and linear speed
+    float rpm = (abs(treadmillSpeed) * 60.0) / 400.0; // Assuming 400 steps per revolution
+    float linearSpeed = (rpm * 0.0762 * PI) / 60.0;   // Convert RPM to m/s
+
+    // Update the LCD display
+    lcd.setCursor(0, 1);
+    lcd.print("Speed: ");
+    lcd.print(linearSpeed, 2); // Print linear speed with 2 decimal places
+    lcd.print(" m/s    ");     // Clear remaining characters on the line
+
+    // Update the last CLK state
+    lastCLKState = currentCLKState;
+  }
+
+  // Run the treadmill at the updated speed
+  treadmill.runSpeed();
+  auger.runSpeed();
+}
+
+// Harness Mode Logic
+void handleHarnessMode() {
+  int currentCLKState = digitalRead(encoderCLK);
+
+  if (currentCLKState != lastCLKState) { // Detect rotation
+    if (digitalRead(encoderDT) == currentCLKState) {
+      // Counter Clockwise rotation
+      stepper.setSpeed(-200); // Move stepper counterclockwise
+    } else {
+      // Clockwise rotation
+      stepper.setSpeed(200); // Move stepper clockwise
+    }
+    lastMoveTime = millis(); // Record the last movement time
+    lastCLKState = currentCLKState; // Update last CLK state
+  }
+
+  // Stop motor if encoder is idle
+  if (millis() - lastMoveTime > 50) { // Delay before stopping motor
+    stepper.setSpeed(0); // Stop the motor if idle
+  }
+
+
+
+  // Save position when Button is pressed
+  if (buttonPressed(Button)) {
+    setPosition = stepper.currentPosition(); // Save current position
+    positionSaved = true;
+    Serial.println("Position Saved");
+  }
+
+  // Emergency button logic
+  if (digitalRead(emergencyButton) == LOW && !eButtonPressed) {
+    eButtonPressed = true;
+
+    if (positionSaved) {
+      Serial.println("Returning to Saved Position");
+      stepper.moveTo(setPosition);
+      stepper.runToPosition();
+    } else {
+      Serial.println("No Position Saved");
     }
   }
-  
+
+  if (digitalRead(emergencyButton) == HIGH) {
+    eButtonPressed = false; // Reset emergency button state
+  }
+}
+
+// Function to Return to Menu
+void returnToMenu() {
+  currentMode = MENU;                // Switch back to MENU mode
+  buttonReleaseGuard = true;         // Set guard flag to prevent immediate selection
+  buttonReleaseTime = millis();      // Record the current time
+
+  // Keep treadmill running at the current speed
+  treadmill.setSpeed(treadmillSpeed);
+
+  positionSaved = false;             // Reset saved position flag
+  eButtonPressed = false;            // Reset emergency button state
+
+  lcd.clear();                       // Clear the LCD before refreshing the menu
+  displayMenu();                     // Refresh the menu display
+  Serial.println("Returned to MENU");
 }
