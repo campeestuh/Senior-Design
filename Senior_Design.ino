@@ -5,6 +5,7 @@
 #define encoderCLK 4
 #define encoderDT 5
 #define rotaryButton 18
+// #define enablePin 12   // Enable pin  FOR TREADMILL (optional)
 #define treadDirectionPin 25
 #define treadPulsePin 27
 #define augerDirectionPin 14
@@ -25,7 +26,7 @@ const int treadmillIncrement = 17;        // Speed Adjustment Step
 // Auger Settings
 AccelStepper auger(1, augerPulsePin, augerDirectionPin);
 int augerSpeed = 0;                       // Initial Auger Speed
-const int augerMaxSpeed = 4000;           // Max Auger Speed
+const int augerMaxSpeed = 2044;           // Max Auger Speed
 const int augerIncrement = 26;            // Speed Adjustment Step
 
 // Harness Motor Settings
@@ -54,7 +55,11 @@ const unsigned long buttonReleaseDelay = 200; // Ignore button presses for 200ms
 
 void setup() {
   Serial.begin(115200);
-
+  // // set enablePin as output
+  // pinMode(enablePin, OUTPUT);
+  // // Enable the motor driver
+  // digitalWrite(enablePin, LOW);  // LOW to enable the motor (depends on driver)
+ 
   // Initialize LCD
   lcd.begin(lcdColumns, lcdRows);
   lcd.setBacklight(255);
@@ -173,39 +178,41 @@ bool buttonPressed(int pin) {
 // Speed Mode Logic
 void handleSpeedMode() {
   int currentCLKState = digitalRead(encoderCLK);
-
+  int currentDTState = digitalRead(encoderDT);
   // If the rotary encoder has been turned
-  if (currentCLKState != lastCLKState) {
+   if (currentCLKState != lastCLKState) {
+    // Clockwise rotation (increase speed)
     if (digitalRead(encoderDT) != currentCLKState) {
-      treadmillSpeed += treadmillIncrement; // Increase speed
+      treadmillSpeed += treadmillIncrement; // Increase speed by finer increment
       augerSpeed += augerIncrement;
-
-    } else {
-      treadmillSpeed -= treadmillIncrement; // Decrease speed
+    } 
+    // Counterclockwise rotation (decrease speed)
+    else {
+      treadmillSpeed -= treadmillIncrement; // Decrease speed by finer increment
       augerSpeed -= augerIncrement;
-
     }
-
     // Constrain the speed within valid range
     treadmillSpeed = constrain(treadmillSpeed, 0, maxSpeed);
     augerSpeed = constrain(augerSpeed, 0, augerMaxSpeed);
 
     // Update the motor speed
-    treadmill.setSpeed(treadmillSpeed);
+    treadmill.setSpeed(-treadmillSpeed);
     auger.setSpeed(augerSpeed);
 
     // Calculate RPM and linear speed
     float rpm = (abs(treadmillSpeed) * 60.0) / 400.0; // Assuming 400 steps per revolution
     float linearSpeed = (rpm * 0.0762 * PI) / 60.0;   // Convert RPM to m/s
 
-    // Update the LCD display
-    lcd.setCursor(0, 1);
-    lcd.print("Speed: ");
-    lcd.print(linearSpeed, 2); // Print linear speed with 2 decimal places
-    lcd.print(" m/s    ");     // Clear remaining characters on the line
-
-    // Update the last CLK state
+  // Update the last CLK state
     lastCLKState = currentCLKState;
+
+    // // Update the LCD display
+    // lcd.setCursor(0, 1);
+    // lcd.print("Speed: ");
+    // lcd.print(linearSpeed, 2); // Print linear speed with 2 decimal places
+    // lcd.print(" m/s    ");     // Clear remaining characters on the line
+
+  
   }
 
   // Run the treadmill at the updated speed
@@ -268,7 +275,7 @@ void returnToMenu() {
   buttonReleaseTime = millis();      // Record the current time
 
   // Keep treadmill running at the current speed
-  treadmill.setSpeed(treadmillSpeed);
+  treadmill.setSpeed(-treadmillSpeed);
 
   positionSaved = false;             // Reset saved position flag
   eButtonPressed = false;            // Reset emergency button state
