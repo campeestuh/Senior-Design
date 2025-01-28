@@ -10,6 +10,8 @@
 #define treadPulsePin 27
 #define augerDirectionPin 14
 #define augerPulsePin 13
+#define harnessDirectionPin 16
+#deinfe harnessPulsePin 15
 #define Button 19
 #define emergencyButton 26
 #define clockwiseButton 27
@@ -32,7 +34,7 @@ const int augerMaxSpeed = 2044;           // Max Auger Speed
 const int augerIncrement = 26;            // Speed Adjustment Step
 
 // Harness Motor Settings
-AccelStepper stepper(1, 15, 16); // Harness motor
+AccelStepper stepper(1, harnessPulsePin, harnessDirectionPin); // Harness motor
 bool positionSaved = false;
 int setPosition = 0; // Saved position for harness adjustments
 bool eButtonPressed = false;
