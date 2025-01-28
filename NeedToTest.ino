@@ -59,11 +59,7 @@ const unsigned long buttonReleaseDelay = 200; // Ignore button presses for 200ms
 
 void setup() {
   Serial.begin(115200);
-  // // set enablePin as output
-  // pinMode(enablePin, OUTPUT);
-  // // Enable the motor driver
-  // digitalWrite(enablePin, LOW);  // LOW to enable the motor (depends on driver)
- 
+  
   // Initialize LCD
   lcd.begin(lcdColumns, lcdRows);
   lcd.setBacklight(255);
