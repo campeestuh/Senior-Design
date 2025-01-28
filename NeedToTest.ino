@@ -11,7 +11,7 @@
 #define augerDirectionPin 14
 #define augerPulsePin 13
 #define harnessDirectionPin 16
-#deinfe harnessPulsePin 15
+#define harnessPulsePin 15
 #define Button 19
 #define emergencyButton 26
 #define clockwiseButton 27
