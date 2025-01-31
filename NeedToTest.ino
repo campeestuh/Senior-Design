@@ -15,7 +15,7 @@
 #define Button 19
 #define emergencyButton 26
 #define clockwiseButton 27
-#define counterclockwiseButton 28
+#define counterclockwiseButton 17
 
 // LCD Settings
 const int lcdColumns = 16, lcdRows = 2;
