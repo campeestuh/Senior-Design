@@ -1,5 +1,6 @@
 #include <LiquidCrystal_PCF8574.h>
 #include <AccelStepper.h>
+#include "esp_sleep.h"
 
 // Pin Definitions
 #define encoderCLK 4
@@ -12,6 +13,8 @@
 #define augerPulsePin 13
 #define Button 19
 #define emergencyButton 26
+#define clockwiseButton 23
+#define counterclockwiseButton 17
 
 // LCD Settings
 const int lcdColumns = 16, lcdRows = 2;
@@ -53,6 +56,9 @@ bool buttonReleaseGuard = false;
 unsigned long buttonReleaseTime = 0;
 const unsigned long buttonReleaseDelay = 200; // Ignore button presses for 200ms
 
+int buttonState = 0;
+int eButtonState = 0;
+
 void setup() {
   Serial.begin(115200);
   // // set enablePin as output
@@ -71,6 +77,8 @@ void setup() {
   pinMode(rotaryButton, INPUT_PULLUP);
   pinMode(Button, INPUT_PULLUP);
   pinMode(emergencyButton, INPUT_PULLUP);
+  pinMode(clockwiseButton, INPUT_PULLUP);
+  pinMode(counterclockwiseButton, INPUT_PULLUP);
 
   // Treadmill Setup
   treadmill.setMaxSpeed(maxSpeed);
@@ -175,6 +183,17 @@ bool buttonPressed(int pin) {
   return false;
 }
 
+void updateLCD(){
+    // Calculate RPM and linear speed
+    float rpm = (abs(treadmillSpeed) * 60.0) / 400.0; // Assuming 400 steps per revolution
+    float linearSpeed = (rpm * 0.0762 * PI) / 60.0;   // Convert RPM to m/s
+    // Update the LCD display
+    lcd.setCursor(0, 1);
+    lcd.print("Speed: ");
+    lcd.print(linearSpeed, 2); // Print linear speed with 2 decimal places
+    lcd.print(" m/s    ");     // Clear remaining characters on the line
+}
+
 // Speed Mode Logic
 void handleSpeedMode() {
   int currentCLKState = digitalRead(encoderCLK);
@@ -185,11 +204,13 @@ void handleSpeedMode() {
     if (digitalRead(encoderDT) != currentCLKState) {
       treadmillSpeed += treadmillIncrement; // Increase speed by finer increment
       augerSpeed += augerIncrement;
+     // updateLCD();
     } 
     // Counterclockwise rotation (decrease speed)
     else {
       treadmillSpeed -= treadmillIncrement; // Decrease speed by finer increment
       augerSpeed -= augerIncrement;
+     // updateLCD();
     }
     // Constrain the speed within valid range
     treadmillSpeed = constrain(treadmillSpeed, 0, maxSpeed);
@@ -199,9 +220,9 @@ void handleSpeedMode() {
     treadmill.setSpeed(-treadmillSpeed);
     auger.setSpeed(augerSpeed);
 
-    // Calculate RPM and linear speed
-    float rpm = (abs(treadmillSpeed) * 60.0) / 400.0; // Assuming 400 steps per revolution
-    float linearSpeed = (rpm * 0.0762 * PI) / 60.0;   // Convert RPM to m/s
+    // // Calculate RPM and linear speed
+    // float rpm = (abs(treadmillSpeed) * 60.0) / 400.0; // Assuming 400 steps per revolution
+    // float linearSpeed = (rpm * 0.0762 * PI) / 60.0;   // Convert RPM to m/s
 
   // Update the last CLK state
     lastCLKState = currentCLKState;
@@ -222,50 +243,50 @@ void handleSpeedMode() {
 
 // Harness Mode Logic
 void handleHarnessMode() {
-  int currentCLKState = digitalRead(encoderCLK);
-
-  if (currentCLKState != lastCLKState) { // Detect rotation
-    if (digitalRead(encoderDT) == currentCLKState) {
-      // Counter Clockwise rotation
-      stepper.setSpeed(-200); // Move stepper counterclockwise
-    } else {
-      // Clockwise rotation
-      stepper.setSpeed(200); // Move stepper clockwise
-    }
-    lastMoveTime = millis(); // Record the last movement time
-    lastCLKState = currentCLKState; // Update last CLK state
-  }
-
-  // Stop motor if encoder is idle
-  if (millis() - lastMoveTime > 50) { // Delay before stopping motor
-    stepper.setSpeed(0); // Stop the motor if idle
-  }
-
-
-
-  // Save position when Button is pressed
-  if (buttonPressed(Button)) {
-    setPosition = stepper.currentPosition(); // Save current position
-    positionSaved = true;
+  buttonState = digitalRead(Button);
+  if (buttonState == LOW) {
+    delay(200);
     Serial.println("Position Saved");
+    setPosition = stepper.currentPosition();
+    positionSaved = true;
   }
 
-  // Emergency button logic
-  if (digitalRead(emergencyButton) == LOW && !eButtonPressed) {
+  // Emergency Button Logic
+  eButtonState = digitalRead(emergencyButton);
+
+  if (eButtonState == LOW && !eButtonPressed) {
     eButtonPressed = true;
 
     if (positionSaved) {
       Serial.println("Returning to Saved Position");
+      stepper.setMaxSpeed(800);
+      stepper.setAcceleration(300);
       stepper.moveTo(setPosition);
       stepper.runToPosition();
     } else {
-      Serial.println("No Position Saved");
+      Serial.println("Ascending Off Platform");
+      int ascendPosition = stepper.currentPosition() - 500;
+      stepper.setMaxSpeed(800);
+      stepper.setAcceleration(300);
+      stepper.moveTo(ascendPosition);
+      stepper.runToPosition();
     }
   }
 
-  if (digitalRead(emergencyButton) == HIGH) {
-    eButtonPressed = false; // Reset emergency button state
+  if (eButtonState == HIGH) {
+    eButtonPressed = false;
   }
+   if (digitalRead(clockwiseButton) == LOW) {
+    stepper.setSpeed(200);  // Clockwise rotation at 200 pulses
+    stepper.runSpeed();
+  } else if (digitalRead(counterclockwiseButton) == LOW) {
+    stepper.setSpeed(-200);  // Counterclockwise rotation at 200 pulses
+    stepper.runSpeed();
+  } else {
+    stepper.setSpeed(0);  // Stop the motor if no button is pressed
+  }
+
+  stepper.runSpeed();
 }
 
 // Function to Return to Menu
