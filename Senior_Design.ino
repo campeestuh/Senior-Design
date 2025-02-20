@@ -243,7 +243,12 @@ void handleSpeedMode() {
   treadmill.runSpeed();
   auger.runSpeed();
 
-  
+  // Allows user to go back into the Menu Selection if motors are not active 
+  if (treadmillSpeed == 0 && augerSpeed == 0) {
+        if (buttonPressed(rotaryButton)) {
+            returnToMenu(); 
+        }
+  }
   
   eButtonState = digitalRead(emergencyButton);
 
