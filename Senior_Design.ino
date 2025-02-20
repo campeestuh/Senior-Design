@@ -11,10 +11,10 @@
 #define treadPulsePin 27
 #define augerDirectionPin 14
 #define augerPulsePin 13
-#define Button 19
+#define Button 23 // 19
 #define emergencyButton 26
-#define clockwiseButton 23
-#define counterclockwiseButton 17
+#define clockwiseButton 17 //23
+#define counterclockwiseButton 19  // 17
 
 // LCD Settings
 const int lcdColumns = 16, lcdRows = 2;
@@ -123,7 +123,10 @@ void loop() {
     }
   } else if (currentMode == SPEED_MODE) {
     handleSpeedMode();
+    if (treadmillSpeed && augerSpeed == 0){
     if (buttonPressed(rotaryButton)) returnToMenu(); // Return to menu if button is pressed
+    else{}
+  }
   } else if (currentMode == HARNESS_MODE) {
     handleHarnessMode();
     if (buttonPressed(rotaryButton)) returnToMenu(); // Return to menu if button is pressed
@@ -239,24 +242,31 @@ void handleSpeedMode() {
   // Run the treadmill at the updated speed
   treadmill.runSpeed();
   auger.runSpeed();
-}
 
-// Harness Mode Logic
-void handleHarnessMode() {
-  buttonState = digitalRead(Button);
-  if (buttonState == LOW) {
-    delay(200);
-    Serial.println("Position Saved");
-    setPosition = stepper.currentPosition();
-    positionSaved = true;
-  }
-
-  // Emergency Button Logic
+  
+  
   eButtonState = digitalRead(emergencyButton);
 
-  if (eButtonState == LOW && !eButtonPressed) {
+  if (eButtonState == HIGH) {
+    eButtonPressed = false;
+  }
+    if (eButtonState == LOW && !eButtonPressed) {
+    eStopProcedure();
+    }
+}
+
+// Need to Fix
+void eStopProcedure(){
+  // Emergency Stop Procedure
     eButtonPressed = true;
 
+      // Make sure Treadmill & Auger are running during this process
+      // treadmill.setSpeed(-treadmillSpeed);
+      // auger.setSpeed(augerSpeed);
+      // treadmill.runSpeed();
+      // auger.runSpeed();
+
+    // Harness logic
     if (positionSaved) {
       Serial.println("Returning to Saved Position");
       stepper.setMaxSpeed(800);
@@ -265,13 +275,84 @@ void handleHarnessMode() {
       stepper.runToPosition();
     } else {
       Serial.println("Ascending Off Platform");
-      int ascendPosition = stepper.currentPosition() - 500;
+      int ascendPosition = stepper.currentPosition() - 200;
       stepper.setMaxSpeed(800);
       stepper.setAcceleration(300);
       stepper.moveTo(ascendPosition);
       stepper.runToPosition();
     }
+    //  Keep the motors running at their current speed before deceleration
+    treadmill.setAcceleration(200);
+    auger.setAcceleration(200);
+
+    //  DO NOT RESET SPEED - Keep the motors running from current speed
+    int currentTreadmillSpeed = treadmillSpeed;
+    int currentAugerSpeed = augerSpeed;
+
+    treadmill.setSpeed(-currentTreadmillSpeed);  // Maintain current speed
+    auger.setSpeed(currentAugerSpeed);
+
+    //  Timing-based gradual deceleration (Works Best)
+    unsigned long lastUpdate = millis();
+    int decelStep = 5;  // **Fine-tuned for even smoother stop**
+    int updateInterval = 50;  // Adjust for slower or faster stop
+
+    while (currentTreadmillSpeed > 0 || currentAugerSpeed > 0) {
+        if (millis() - lastUpdate >= updateInterval) {  // Execute every `updateInterval` ms
+            lastUpdate = millis();  // Reset timer
+            
+            if (currentTreadmillSpeed > 0) {
+                currentTreadmillSpeed = max(0, currentTreadmillSpeed - decelStep);
+                treadmill.setSpeed(-currentTreadmillSpeed);  // Keep speed negative for direction
+            }
+            if (currentAugerSpeed > 0) {
+                currentAugerSpeed = max(0, currentAugerSpeed - decelStep);
+                auger.setSpeed(currentAugerSpeed);
+            }
+        }
+
+        //  Keep motors running smoothly while decelerating
+        treadmill.runSpeed();
+        auger.runSpeed();
+    }
+
+    // Ensure motors fully stop at the end
+    // treadmill.setSpeed(0);
+    // auger.setSpeed(0);
+    // treadmill.runSpeed();
+    // auger.runSpeed();
+
+    Serial.println("EMERGENCY STOP COMPLETE - ENTERING LOW POWER MODE");
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("SYSTEM SHUTDOWN");
+    lcd.setCursor(0, 1);
+    lcd.print("RESTART REQUIRED");
+    
+    delay(5000);
+    esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, 0);      // Enables Sleep Mode for ESP32
+    esp_deep_sleep_start();
+  
+}
+
+// Harness Mode Logic
+void handleHarnessMode() {
+  buttonState = digitalRead(Button);
+  if (buttonState == LOW) {
+    delay(200);
+    lcd.setCursor(0, 1);
+    lcd.print("Position Saved");  
+    delay(1000);
+    lcd.setCursor(0, 1);
+    lcd.print("               ");  
+
+    setPosition = stepper.currentPosition();
+    positionSaved = true;
   }
+
+  // Emergency Button Logic
+  eButtonState = digitalRead(emergencyButton);
+
 
   if (eButtonState == HIGH) {
     eButtonPressed = false;
@@ -294,9 +375,6 @@ void returnToMenu() {
   currentMode = MENU;                // Switch back to MENU mode
   buttonReleaseGuard = true;         // Set guard flag to prevent immediate selection
   buttonReleaseTime = millis();      // Record the current time
-
-  // Keep treadmill running at the current speed
-  treadmill.setSpeed(-treadmillSpeed);
 
   positionSaved = false;             // Reset saved position flag
   eButtonPressed = false;            // Reset emergency button state
