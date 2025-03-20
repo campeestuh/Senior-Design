@@ -27,6 +27,11 @@ STEP/PUL    --> Pin 13
 DIRECTION   --> Pin 14
 ENABLE      --> 5V
 
+AUGER 2 
+STEP/PUL    --> Pin 33
+DIRECTION   --> Pin 32
+ENABLE      --> 5V
+
 TREADMILL
 STEP/PUL    --> Pin 27
 DIRECTION   --> Pin 25
