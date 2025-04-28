@@ -1,7 +1,7 @@
 // Authors: Juan Campista & Alicia Enriquez     
 // Date:    4/23/2024
 // Summary: This code implements a rotary encoder-controlled user interface for a treadmill system
-//          with two modes: speed control for a treadmill motor and directional control for a harnes
+//          with two modes: speed control for a treadmill motor and directional control for a harness
 //          motor. It displays a menu on an I2C LCD, handles rotary input for navigation and selection,
 //          and adjusts motor behavior based on user interaction. Emergency stop and directional
 //          control buttons are also integrated for safety and manual overrides.
