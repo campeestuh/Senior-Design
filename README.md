@@ -44,6 +44,6 @@ How to get ESP32 Board Support:
 - In "Additional Board Manager URLs" add this URL:
 https://dl.espressif.com/dl/package_esp32_index.json
 - Click OK and save
-  
+- 
 Install LiquidCrystal Library by Adafruit
 
